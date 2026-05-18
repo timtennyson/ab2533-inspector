@@ -64,6 +64,37 @@ fully offline; the camera button uses the native camera for per-item photo/video
   sync for multi-user sign-off.
 - **v3:** prefill county application forms (PLG-200/210/230) from project data.
 
+## Confidentiality & data handling
+
+Client confidentiality is enforced by **architecture**, not policy:
+
+- **The public GitHub repo contains only the app shell** (HTML/JS/CSS + the blank
+  checklist structure). It holds **zero** client or inspection data.
+- **All inspection data stays on the device.** Notes, photos, video, addresses,
+  and owner info are written to the browser's IndexedDB on that one phone. There
+  are **no network calls** in the app — no analytics, CDN, fonts, or telemetry
+  (verified: the only `fetch` calls are a local `data:` URL during JSON import and
+  the service worker caching same-origin app files). The hosted code physically
+  cannot see inspection data.
+- **Browser sync does not sync IndexedDB**, so data does not propagate to other
+  devices via iCloud/Chrome sync.
+
+Two residual leak vectors remain the operator's responsibility (accepted; not
+mitigated in code by decision):
+
+1. **A lost or stolen *unlocked* phone.** The app has no passcode of its own; it
+   relies on the device lock screen + OS disk encryption. **Keep the phone
+   passcode/biometrics enabled.**
+2. **Files that leave the device.** "Export JSON" and "Save as PDF" produce
+   **unencrypted** files containing everything. Treat them as confidential client
+   records: store them only on access-controlled systems, send via secure
+   channels, and delete local copies once submitted. Use "New" to clear an
+   inspection from the device when no longer needed.
+
+If the client base ever requires stronger guarantees, the planned upgrades are:
+passphrase-encrypted exports (Web Crypto AES-GCM) and an app passcode with
+at-rest IndexedDB encryption.
+
 ## Disclaimer
 
 An aid, not legal or engineering advice. Completion of the checklist does not
