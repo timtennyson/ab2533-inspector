@@ -90,6 +90,15 @@
   }
   function esc(s) { return (s == null ? "" : String(s)).replace(/[&<>"]/g, function (c) {
     return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  // Status, color-coded for the report: violation=red, unconfirmed=orange,
+  // compliant=black. Returns ready-to-insert (already-escaped) HTML.
+  function stWrap(st) {
+    var s = (st || "").toLowerCase();
+    var u = esc(st ? String(st).toUpperCase() : "—");
+    var c = s === "violation" ? "st-v" : s === "unconfirmed" ? "st-u"
+          : s === "compliant" ? "st-c" : "st-n";
+    return "<span class='" + c + "'>" + u + "</span>";
+  }
 
   function projectCard() {
     var p = STATE.project, P = "project";
@@ -121,17 +130,25 @@
     var ov = el("div", { class: "cam-ov" });
     var video = el("video", { autoplay: "", playsinline: "" });
     video.muted = true;
-    var count = el("div", { class: "cam-count" }, "0 captured — tap circle to snap");
+    var count = el("div", { class: "cam-count" }, "0 photos — tap the circle to capture");
+    var flash = el("div", { class: "cam-flash" });
+    var thumb = el("img", { class: "cam-thumb", alt: "last capture" });
     var bar = el("div", { class: "cam-bar" });
     var flip = el("button", { type: "button", class: "cam-btn" }, "⟲ Flip");
-    var shot = el("button", { type: "button", class: "cam-shot", "aria-label": "Capture" });
+    var shot = el("button", { type: "button", class: "cam-shot", "aria-label": "Capture photo" });
     var done = el("button", { type: "button", class: "cam-btn" }, "Done");
     bar.appendChild(flip); bar.appendChild(shot); bar.appendChild(done);
-    ov.appendChild(video); ov.appendChild(count); ov.appendChild(bar);
+    ov.appendChild(video); ov.appendChild(flash); ov.appendChild(thumb);
+    ov.appendChild(count); ov.appendChild(bar);
     document.body.appendChild(ov);
+    var lastUrl = null;
 
     function stop() { if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); }
-    function close() { stop(); ov.remove(); }
+    function close() {
+      stop();
+      if (lastUrl) URL.revokeObjectURL(lastUrl);
+      ov.remove();
+    }
     function start() {
       stop();
       navigator.mediaDevices.getUserMedia({ video: { facingMode: facing }, audio: false })
@@ -146,16 +163,28 @@
       facing = facing === "environment" ? "user" : "environment"; start();
     });
     done.addEventListener("click", close);
+    function pulse(node, cls) {
+      node.classList.remove(cls); void node.offsetWidth; node.classList.add(cls);
+    }
     shot.addEventListener("click", function () {
       if (!video.videoWidth) return;
+      // instant feedback the moment the button is pressed
+      try { if (navigator.vibrate) navigator.vibrate(40); } catch (e) {}
+      pulse(flash, "fire");
+      pulse(shot, "fire");
       var cv = document.createElement("canvas");
       cv.width = video.videoWidth; cv.height = video.videoHeight;
       cv.getContext("2d").drawImage(video, 0, 0);
       cv.toBlob(function (b) {
         if (!b) return;
-        n++; count.textContent = n + " captured — tap circle to snap";
-        ov.classList.add("flash");
-        setTimeout(function () { ov.classList.remove("flash"); }, 130);
+        n++;
+        count.textContent = n + (n === 1 ? " photo" : " photos") +
+          " captured — tap the circle for more";
+        if (lastUrl) URL.revokeObjectURL(lastUrl);
+        lastUrl = URL.createObjectURL(b);
+        thumb.src = lastUrl;
+        thumb.classList.add("show");
+        pulse(thumb, "pop");
         onBlob(b);
       }, "image/jpeg", 0.85);
     });
@@ -412,7 +441,7 @@
       grp.rows.forEach(function (f) {
         memo += "<tr><td>" + esc(f.id) + "</td><td>" + esc(f.text) +
           (f.notes ? "<br><em>Field: " + esc(f.notes) + "</em>" : "") +
-          "</td><td class='rpt-v'>" + f.status.toUpperCase() + "</td><td>" +
+          "</td><td>" + stWrap(f.status) + "</td><td>" +
           esc(f.trade) + "</td><td>" + esc(f.basis) + "</td><td>" +
           esc(f.rec) + "</td></tr>";
       });
@@ -426,7 +455,7 @@
       s.items.forEach(function (it) {
         var r = STATE.items[it.id] || {};
         full += "<tr><td>" + it.id + "</td><td>" + esc(it.text) + "</td><td>" +
-          esc((r.status || "—").toUpperCase()) + "</td><td>" + esc(r.notes || "") + "</td></tr>";
+          stWrap(r.status) + "</td><td>" + esc(r.notes || "") + "</td></tr>";
       });
     });
     var fHas = CL.fieldItems.some(function (n) {
@@ -439,7 +468,7 @@
         var r = STATE.items[n] || {};
         if (!(r.text || r.status || r.notes)) return;
         full += "<tr><td>" + n + "</td><td>" + esc(r.text || "") + "</td><td>" +
-          esc((r.status || "—").toUpperCase()) + "</td><td>" + esc(r.notes || "") + "</td></tr>";
+          stWrap(r.status) + "</td><td>" + esc(r.notes || "") + "</td></tr>";
       });
     }
     full += "</table>";
@@ -460,7 +489,7 @@
       var fi = findItem(parseInt(id, 10)), r = STATE.items[id] || {};
       return {
         txt: fi ? fi.it.text : (r.text || "Field-identified item " + id),
-        st: (r.status || "—").toUpperCase()
+        st: r.status || ""
       };
     }
     var ordered = [];
@@ -488,7 +517,7 @@
         shown++;
         var m = itemMeta(pi.id);
         photos += "<p><strong>#" + esc(pi.id) + " — " + esc(m.txt) +
-          "</strong> <em>(" + esc(m.st) + ")</em></p><div class='rpt-photos'>" +
+          "</strong> (" + stWrap(m.st) + ")</p><div class='rpt-photos'>" +
           pi._ph + "</div>";
       });
       if (!shown) photos += "<p>No photos or videos attached.</p>";
