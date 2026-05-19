@@ -391,16 +391,14 @@
     var byTrade = {};
     findings.forEach(function (f) { (byTrade[f.trade] = byTrade[f.trade] || []).push(f); });
 
-    var memo = "<div class='pgbreak'></div><h2>Design-Team Recommendations (by trade)</h2>" +
-      "<p style='font-size:11px'>SAFE-HARBOR items: HSC 17920.3 exempts components that were " +
-      "legal when built and have been safely maintained.</p>";
+    var memo = "<div class='pgbreak'></div><h2>Design-Team Recommendations (by trade)</h2>";
     Object.keys(byTrade).sort().forEach(function (tr) {
       memo += "<h3>" + esc(tr) + "</h3><table class='rpt-table'><tr><th>#</th>" +
         "<th>Condition</th><th>Status</th><th>HSC basis</th><th>Recommendation for plans</th></tr>";
       byTrade[tr].forEach(function (f) {
         memo += "<tr><td>" + esc(f.id) + "</td><td>" + esc(f.text) +
           (f.notes ? "<br><em>Field: " + esc(f.notes) + "</em>" : "") + "</td><td class='rpt-v'>" +
-          f.status.toUpperCase() + (f.safeHarbor ? "<br>(safe-harbor)" : "") + "</td><td>" +
+          f.status.toUpperCase() + "</td><td>" +
           esc(f.basis) + "</td><td>" + esc(f.rec) + "</td></tr>";
       });
       memo += "</table>";
