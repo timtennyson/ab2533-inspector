@@ -81,3 +81,19 @@ textarea{min-height:3rem;resize:vertical}
 .report-root.preview .rpt-photos img{max-width:160px;margin:.3rem;border:1px solid #999}
 .disclaimer{max-width:860px;margin:0 auto;padding:1rem .9rem 2rem;font-size:.74rem;color:#777}
 @media (max-width:560px){.grid2,.sig{grid-template-columns:1fr}}
+
+/* In-app camera */
+.addmedia.alt{background:transparent;border-style:solid;color:#555}
+.cam-ov{position:fixed;inset:0;z-index:50;background:#000;display:flex;
+  flex-direction:column}
+.cam-ov video{flex:1;width:100%;min-height:0;object-fit:cover;background:#000}
+.cam-ov.flash{background:#fff}
+.cam-count{position:absolute;left:0;right:0;text-align:center;color:#fff;
+  font-size:.78rem;opacity:.85;padding-top:calc(8px + env(safe-area-inset-top,0))}
+.cam-bar{display:flex;align-items:center;justify-content:space-between;gap:1rem;
+  padding:1rem 1.3rem calc(1rem + env(safe-area-inset-bottom,0));background:#000}
+.cam-btn{background:rgba(255,255,255,.15);color:#fff;
+  border:1px solid rgba(255,255,255,.4);padding:.6rem .9rem;border-radius:8px;font:inherit}
+.cam-shot{width:68px;height:68px;border-radius:50%;background:#fff;
+  border:4px solid rgba(255,255,255,.5);cursor:pointer;flex:0 0 auto}
+.cam-shot:active{transform:scale(.92)}

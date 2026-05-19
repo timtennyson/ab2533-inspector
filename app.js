@@ -110,6 +110,58 @@
     c.appendChild(g); return c;
   }
 
+  /* In-app camera (getUserMedia). Reliable on Android Chrome and inside an
+   * installed PWA, where <input capture> often falls back to the gallery. */
+  function openCamera(onBlob) {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      alert("Live camera not available here — use 'Library / video' instead.");
+      return;
+    }
+    var facing = "environment", stream = null, n = 0;
+    var ov = el("div", { class: "cam-ov" });
+    var video = el("video", { autoplay: "", playsinline: "" });
+    video.muted = true;
+    var count = el("div", { class: "cam-count" }, "0 captured — tap circle to snap");
+    var bar = el("div", { class: "cam-bar" });
+    var flip = el("button", { type: "button", class: "cam-btn" }, "⟲ Flip");
+    var shot = el("button", { type: "button", class: "cam-shot", "aria-label": "Capture" });
+    var done = el("button", { type: "button", class: "cam-btn" }, "Done");
+    bar.appendChild(flip); bar.appendChild(shot); bar.appendChild(done);
+    ov.appendChild(video); ov.appendChild(count); ov.appendChild(bar);
+    document.body.appendChild(ov);
+
+    function stop() { if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); }
+    function close() { stop(); ov.remove(); }
+    function start() {
+      stop();
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: facing }, audio: false })
+        .then(function (s) { stream = s; video.srcObject = s; video.play().catch(function () {}); })
+        .catch(function (e) {
+          alert("Camera blocked or unavailable (" + (e && e.name) +
+            "). Allow camera for this site in browser settings, or use 'Library / video'.");
+          close();
+        });
+    }
+    flip.addEventListener("click", function () {
+      facing = facing === "environment" ? "user" : "environment"; start();
+    });
+    done.addEventListener("click", close);
+    shot.addEventListener("click", function () {
+      if (!video.videoWidth) return;
+      var cv = document.createElement("canvas");
+      cv.width = video.videoWidth; cv.height = video.videoHeight;
+      cv.getContext("2d").drawImage(video, 0, 0);
+      cv.toBlob(function (b) {
+        if (!b) return;
+        n++; count.textContent = n + " captured — tap circle to snap";
+        ov.classList.add("flash");
+        setTimeout(function () { ov.classList.remove("flash"); }, 130);
+        onBlob(b);
+      }, "image/jpeg", 0.85);
+    });
+    start();
+  }
+
   function mediaStrip(rec, store) {
     var box = el("div", { class: "media" });
     function refresh() {
@@ -130,17 +182,25 @@
           t.appendChild(v); t.appendChild(x); box.appendChild(t);
         });
       });
-      var add = el("label", { class: "addmedia" }, "+ Photo / Video");
-      var inp = el("input", { type: "file", accept: "image/*,video/*", capture: "environment", hidden: "" });
-      add.appendChild(inp);
+      function storeBlob(blob, type) {
+        return idbAdd("media", { blob: blob, type: type || blob.type, ts: Date.now() })
+          .then(function (id) { rec.media.push(id); });
+      }
+      var cam = el("button", { type: "button", class: "addmedia" }, "📷 Take photo");
+      cam.addEventListener("click", function () {
+        openCamera(function (blob) {
+          storeBlob(blob, "image/jpeg").then(function () { scheduleSave(); refresh(); });
+        });
+      });
+      var pick = el("label", { class: "addmedia alt" }, "🖼 Library / video");
+      var inp = el("input", { type: "file", accept: "image/*,video/*", hidden: "" });
+      pick.appendChild(inp);
       inp.addEventListener("change", function () {
         var files = Array.prototype.slice.call(inp.files || []);
-        Promise.all(files.map(function (file) {
-          return idbAdd("media", { blob: file, type: file.type, ts: Date.now() })
-            .then(function (id) { rec.media.push(id); });
-        })).then(function () { scheduleSave(); refresh(); });
+        Promise.all(files.map(function (file) { return storeBlob(file, file.type); }))
+          .then(function () { scheduleSave(); refresh(); });
       });
-      box.appendChild(add);
+      box.appendChild(cam); box.appendChild(pick);
     }
     refresh();
     return box;
