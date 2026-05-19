@@ -606,10 +606,9 @@
 
   /* ---------- Export / Import (on-device only) ---------- */
   function exportJSON() {
-    // includes media as base64 so the file is a complete portable backup
-    var media = [];
-    var store = tx("media", "readonly");
-    var cur = store.openCursor();
+    // One file = entire inspection INCLUDING every photo/video (base64).
+    var media = [], cur = tx("media", "readonly").openCursor();
+    cur.onerror = function () { alert("Save failed: could not read photos from device storage."); };
     cur.onsuccess = function (e) {
       var c = e.target.result;
       if (c) {
@@ -618,35 +617,52 @@
           media.push({ id: c.value.id, type: c.value.type, data: fr.result });
           c.continue();
         };
+        fr.onerror = function () { c.continue(); };
         fr.readAsDataURL(c.value.blob);
-      } else {
+        return;
+      }
+      try {
         var blob = new Blob([JSON.stringify({ v: 1, state: STATE, media: media })],
           { type: "application/json" });
+        var url = URL.createObjectURL(blob);
+        var name = "AB2533_" + (STATE.project.apn || "inspection") + "_" +
+          (STATE.project.date || "draft") + ".json";
         var a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = "AB2533_" + (STATE.project.apn || "inspection") + "_" +
-          STATE.project.date + ".json";
+        a.href = url; a.download = name;
+        document.body.appendChild(a);   // Android Chrome needs it in the DOM
         a.click();
+        setTimeout(function () { a.remove(); URL.revokeObjectURL(url); }, 1500);
+        alert("Saved \"" + name + "\" to your downloads.\n\nIncludes " +
+          media.length + " photo/video file(s) plus all checklist data and notes.\n\n" +
+          "To edit later: tap \"Open Inspection\" and pick this file.");
+      } catch (err) {
+        alert("Save failed: " + (err && err.message || err));
       }
     };
   }
   function importJSON(file) {
     var fr = new FileReader();
     fr.onload = function () {
-      try {
-        var d = JSON.parse(fr.result);
-        STATE = d.state;
-        // wipe + restore media
-        DB.transaction("media", "readwrite").objectStore("media").clear()
-          .onsuccess = function () {
-          (d.media || []).forEach(function (m) {
-            fetch(m.data).then(function (r) { return r.blob(); }).then(function (b) {
-              idbAdd("media", { blob: b, type: m.type, ts: Date.now() });
-            });
-          });
-          idbPut("state", STATE, "current").then(function () { render(); });
-        };
-      } catch (e) { alert("Invalid file."); }
+      var d;
+      try { d = JSON.parse(fr.result); } catch (e) { d = null; }
+      if (!d || !d.state) { alert("That file isn't a saved AB 2533 inspection."); return; }
+      if (!confirm("Open this inspection? It replaces what's currently on this " +
+        "device. (Save the current one first if you need it.)")) return;
+      STATE = d.state;
+      var clr = DB.transaction("media", "readwrite").objectStore("media").clear();
+      clr.onsuccess = function () {
+        var mediaList = d.media || [];
+        Promise.all(mediaList.map(function (m) {
+          return fetch(m.data).then(function (r) { return r.blob(); })
+            .then(function (b) { return idbAdd("media", { id: m.id, blob: b, type: m.type, ts: Date.now() }); });
+        })).then(function () {
+          return idbPut("state", STATE, "current");
+        }).then(function () {
+          render();
+          alert("Inspection loaded — " + mediaList.length +
+            " photo/video file(s) restored. You can keep editing.");
+        });
+      };
     };
     fr.readAsText(file);
   }
