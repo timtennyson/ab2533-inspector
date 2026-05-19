@@ -393,8 +393,7 @@
 
     var memo = "<div class='pgbreak'></div><h2>Design-Team Recommendations (by trade)</h2>" +
       "<p style='font-size:11px'>SAFE-HARBOR items: HSC 17920.3 exempts components that were " +
-      "legal when built and have been safely maintained. Do not over-scope these to current " +
-      "code. County has confirmed Title 24 (energy) is <strong>not</strong> enforced.</p>";
+      "legal when built and have been safely maintained.</p>";
     Object.keys(byTrade).sort().forEach(function (tr) {
       memo += "<h3>" + esc(tr) + "</h3><table class='rpt-table'><tr><th>#</th>" +
         "<th>Condition</th><th>Status</th><th>HSC basis</th><th>Recommendation for plans</th></tr>";
@@ -539,12 +538,12 @@
       setText(T.ownerName, p.owner || sg.ownerName);
       setText(T.ownerEmail, p.ownerEmail || sg.ownerEmail);
       setText(T.ownerPhone, p.ownerPhone || sg.ownerPhone);
-      setText(T.ownerSig, sg.ownerName || p.owner);
+      // T.ownerSig intentionally left blank for a wet or e-signature.
       setText(T.ownerDate, p.date);
       setText(T.coName, sg.contractorName);
       setText(T.coPhone, sg.contractorPhone);
       setText(T.coEmail, sg.contractorEmail);
-      setText(T.coSig, sg.contractorName);
+      // T.coSig intentionally left blank for a wet or e-signature.
       setText(T.coLic, sg.contractorLic);
       setText(T.coDate, p.date);
       setText(T.fi44, (STATE.items[44] || {}).text);
