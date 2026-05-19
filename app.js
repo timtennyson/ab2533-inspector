@@ -607,37 +607,42 @@
   /* ---------- Export / Import (on-device only) ---------- */
   function exportJSON() {
     // One file = entire inspection INCLUDING every photo/video (base64).
-    var media = [], cur = tx("media", "readonly").openCursor();
-    cur.onerror = function () { alert("Save failed: could not read photos from device storage."); };
-    cur.onsuccess = function (e) {
-      var c = e.target.result;
-      if (c) {
-        var fr = new FileReader();
-        fr.onload = function () {
-          media.push({ id: c.value.id, type: c.value.type, data: fr.result });
-          c.continue();
-        };
-        fr.onerror = function () { c.continue(); };
-        fr.readAsDataURL(c.value.blob);
-        return;
-      }
-      try {
-        var blob = new Blob([JSON.stringify({ v: 1, state: STATE, media: media })],
-          { type: "application/json" });
-        var url = URL.createObjectURL(blob);
-        var name = "AB2533_" + (STATE.project.apn || "inspection") + "_" +
-          (STATE.project.date || "draft") + ".json";
-        var a = document.createElement("a");
-        a.href = url; a.download = name;
-        document.body.appendChild(a);   // Android Chrome needs it in the DOM
-        a.click();
-        setTimeout(function () { a.remove(); URL.revokeObjectURL(url); }, 1500);
-        alert("Saved \"" + name + "\" to your downloads.\n\nIncludes " +
-          media.length + " photo/video file(s) plus all checklist data and notes.\n\n" +
-          "To edit later: tap \"Open Inspection\" and pick this file.");
-      } catch (err) {
-        alert("Save failed: " + (err && err.message || err));
-      }
+    // getAll() in ONE request, then convert blobs AFTER the transaction —
+    // never do async work between cursor steps (the tx auto-closes).
+    var req;
+    try { req = tx("media", "readonly").getAll(); }
+    catch (e) { alert("Save failed: storage unavailable (" + (e && e.message) + ")"); return; }
+    req.onerror = function () { alert("Save failed: could not read photos from device storage."); };
+    req.onsuccess = function () {
+      var recs = req.result || [];
+      Promise.all(recs.map(function (rec) {
+        return new Promise(function (res) {
+          if (!rec || !rec.blob) { res(null); return; }
+          var fr = new FileReader();
+          fr.onload = function () { res({ id: rec.id, type: rec.type, data: fr.result }); };
+          fr.onerror = function () { res(null); };
+          fr.readAsDataURL(rec.blob);
+        });
+      })).then(function (list) {
+        var media = list.filter(Boolean);
+        try {
+          var blob = new Blob([JSON.stringify({ v: 1, state: STATE, media: media })],
+            { type: "application/json" });
+          var url = URL.createObjectURL(blob);
+          var name = "AB2533_" + (STATE.project.apn || "inspection") + "_" +
+            (STATE.project.date || "draft") + ".json";
+          var a = document.createElement("a");
+          a.href = url; a.download = name;
+          document.body.appendChild(a);   // Android Chrome needs it in the DOM
+          a.click();
+          setTimeout(function () { a.remove(); URL.revokeObjectURL(url); }, 1500);
+          alert("Saved \"" + name + "\" to your downloads.\n\nIncludes " +
+            media.length + " photo/video file(s) plus all checklist data and notes.\n\n" +
+            "To edit later: tap \"Open Inspection\" and pick this file.");
+        } catch (err) {
+          alert("Save failed: " + (err && err.message || err));
+        }
+      });
     };
   }
   function importJSON(file) {
@@ -673,7 +678,9 @@
     document.getElementById("btnCounty").addEventListener("click", buildCountyPDF);
     document.getElementById("btnExport").addEventListener("click", exportJSON);
     document.getElementById("importFile").addEventListener("change", function (e) {
-      if (e.target.files[0]) importJSON(e.target.files[0]);
+      var f = e.target.files[0];
+      e.target.value = "";              // allow re-picking the same file later
+      if (f) importJSON(f);
     });
     document.getElementById("btnReset").addEventListener("click", function () {
       if (!confirm("Start a new inspection? Export first if you need this one.")) return;
