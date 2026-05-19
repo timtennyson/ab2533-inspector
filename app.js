@@ -360,20 +360,24 @@
       var r = STATE.items[id], st = r.status;
       if (st === "violation" || st === "unconfirmed") {
         var fi = findItem(parseInt(id, 10));
+        var sec = fi ? fi.s : null;
         findings.push({
           id: id,
+          itemNum: parseInt(id, 10),
+          secId: sec ? sec.id : "I",
+          secTitle: sec ? sec.title : "Additional Safety Violations (field-identified)",
+          secOrder: sec ? CL.sections.indexOf(sec) : CL.sections.length,
           text: fi ? fi.it.text : (r.text || "Field-identified item " + id),
           trade: fi ? (fi.it.trade || "General") : "General",
           basis: fi ? (fi.it.basis || (fi.s.basis || "")) : "Field-identified",
           status: st,
-          safeHarbor: fi ? !!fi.it.safeHarbor : false,
           rec: fi ? recFor(fi.it, st) : "Address field-identified condition in submitted plans.",
           notes: r.notes || "", media: r.media || []
         });
       }
     });
     findings.sort(function (a, b) {
-      return a.trade === b.trade ? a.id - b.id : a.trade < b.trade ? -1 : 1;
+      return a.secOrder !== b.secOrder ? a.secOrder - b.secOrder : a.itemNum - b.itemNum;
     });
 
     var head =
@@ -388,18 +392,29 @@
       findings.filter(function (f){return f.status==="unconfirmed";}).length +
       " unconfirmed (concealed — further investigation).</p>";
 
-    var byTrade = {};
-    findings.forEach(function (f) { (byTrade[f.trade] = byTrade[f.trade] || []).push(f); });
-
-    var memo = "<div class='pgbreak'></div><h2>Design-Team Recommendations (by trade)</h2>";
-    Object.keys(byTrade).sort().forEach(function (tr) {
-      memo += "<h3>" + esc(tr) + "</h3><table class='rpt-table'><tr><th>#</th>" +
-        "<th>Condition</th><th>Status</th><th>HSC basis</th><th>Recommendation for plans</th></tr>";
-      byTrade[tr].forEach(function (f) {
+    // Group by the county form's sections, in form order (NOT by trade), so
+    // headers/order mirror PLG-264. Trade is shown as a column for sign-off.
+    var memo = "<div class='pgbreak'></div><h2>Design-Team Recommendations</h2>";
+    var bySec = {}, secList = [];
+    findings.forEach(function (f) {
+      if (!bySec[f.secId]) {
+        bySec[f.secId] = { title: f.secTitle, order: f.secOrder, rows: [] };
+        secList.push(f.secId);
+      }
+      bySec[f.secId].rows.push(f);
+    });
+    secList.sort(function (a, b) { return bySec[a].order - bySec[b].order; });
+    secList.forEach(function (sid) {
+      var grp = bySec[sid];
+      memo += "<h3>" + esc(sid + ". " + grp.title) + "</h3>" +
+        "<table class='rpt-table'><tr><th>#</th><th>Condition</th><th>Status</th>" +
+        "<th>Trade</th><th>HSC basis</th><th>Recommendation for plans</th></tr>";
+      grp.rows.forEach(function (f) {
         memo += "<tr><td>" + esc(f.id) + "</td><td>" + esc(f.text) +
-          (f.notes ? "<br><em>Field: " + esc(f.notes) + "</em>" : "") + "</td><td class='rpt-v'>" +
-          f.status.toUpperCase() + "</td><td>" +
-          esc(f.basis) + "</td><td>" + esc(f.rec) + "</td></tr>";
+          (f.notes ? "<br><em>Field: " + esc(f.notes) + "</em>" : "") +
+          "</td><td class='rpt-v'>" + f.status.toUpperCase() + "</td><td>" +
+          esc(f.trade) + "</td><td>" + esc(f.basis) + "</td><td>" +
+          esc(f.rec) + "</td></tr>";
       });
       memo += "</table>";
     });
