@@ -514,11 +514,25 @@
       var out = a[0], font = a[1], bold = a[2];
       var PW = 612, PH = 792, M = 46, page, y;
       function np() { page = out.addPage([PW, PH]); y = PH - M; }
+      // Standard Helvetica is WinAnsi-only; fold typographic/math symbols to
+      // ASCII so chars like ≥ (U+2265) don't throw, then catch any remaining
+      // non-Latin-1 codepoint.
+      function asc(s) {
+        return String(s)
+          .replace(/[‘’‚‛]/g, "'")
+          .replace(/[“”„]/g, '"')
+          .replace(/[–—―]/g, "-")
+          .replace(/…/g, "...").replace(/•/g, "-")
+          .replace(/ /g, " ").replace(/→/g, "->")
+          .replace(/≥/g, ">=").replace(/≤/g, "<=")
+          .replace(/≠/g, "!=").replace(/×/g, "x")
+          .replace(/[^\x00-\xFF]/g, "-");
+      }
       function txt(s, o) {
         o = o || {};
         var size = o.size || 9, f = o.bold ? bold : font;
         var color = o.color || P.rgb(0, 0, 0), indent = o.indent || 0;
-        var maxW = PW - 2 * M - indent, words = String(s).split(/\s+/), ln = "";
+        var maxW = PW - 2 * M - indent, words = asc(s).split(/\s+/), ln = "";
         function flush() {
           if (y < M + size) np();
           page.drawText(ln, { x: M + indent, y: y, size: size, font: f, color: color });
@@ -534,8 +548,8 @@
       function gap(h) { y -= (h || 6); if (y < M) np(); }
       function row(id, st) {
         if (y < M + 26) np();
-        page.drawText(id, { x: M, y: y, size: 9, font: bold });
-        page.drawText((st || "—").toUpperCase(),
+        page.drawText(asc(id), { x: M, y: y, size: 9, font: bold });
+        page.drawText(asc((st || "—").toUpperCase()),
           { x: M + 36, y: y, size: 9, font: bold, color: statusRGB(P, st) });
         y -= 12;
       }

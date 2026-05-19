@@ -1,5 +1,5 @@
 /* Offline app shell. Bump CACHE to force update after edits. */
-var CACHE = "ab2533-v3";
+var CACHE = "ab2533-v4";
 var ASSETS = [
   "./", "./index.html", "./styles.css", "./app.js",
   "./data/checklist.js", "./manifest.webmanifest",
