@@ -97,3 +97,5 @@ textarea{min-height:3rem;resize:vertical}
 .cam-shot{width:68px;height:68px;border-radius:50%;background:#fff;
   border:4px solid rgba(255,255,255,.5);cursor:pointer;flex:0 0 auto}
 .cam-shot:active{transform:scale(.92)}
+.rpt-vid{display:inline-block;font-size:.75rem;color:#555;font-style:italic;
+  border:1px dashed #999;padding:.2rem .45rem;border-radius:4px;margin:.2rem}

@@ -1,8 +1,9 @@
 /* Offline app shell. Bump CACHE to force update after edits. */
-var CACHE = "ab2533-v2";
+var CACHE = "ab2533-v3";
 var ASSETS = [
   "./", "./index.html", "./styles.css", "./app.js",
-  "./data/checklist.js", "./manifest.webmanifest"
+  "./data/checklist.js", "./manifest.webmanifest",
+  "./vendor/pdf-lib.min.js", "./data/PLG-264.pdf"
 ];
 self.addEventListener("install", function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(ASSETS); }));

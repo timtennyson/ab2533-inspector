@@ -338,10 +338,16 @@
   }
   function imgTag(mid) {
     return idbGet("media", mid).then(function (m) {
-      if (!m || m.blob.type.indexOf("image") !== 0) return "";
+      if (!m || !m.blob) return "";
+      // Android pickers often report an empty blob.type for valid images;
+      // treat anything that isn't a video as an image (mirrors the editor).
+      if ((m.blob.type || "").indexOf("video") === 0)
+        return "<span class='rpt-vid'>[ video clip recorded — viewable in the " +
+          "app; not embeddable in a PDF ]</span>";
       return new Promise(function (res) {
         var fr = new FileReader();
         fr.onload = function () { res('<img src="' + fr.result + '">'); };
+        fr.onerror = function () { res(""); };
         fr.readAsDataURL(m.blob);
       });
     });
@@ -402,15 +408,28 @@
     });
 
     var full = "<h2 class='pgbreak'>Full Checklist Status</h2><table class='rpt-table'>" +
-      "<tr><th>#</th><th>Item</th><th>Status</th></tr>";
+      "<tr><th>#</th><th>Item</th><th>Status</th><th>Field notes</th></tr>";
     CL.sections.forEach(function (s) {
-      full += "<tr><td colspan='3'><strong>" + esc(s.id + ". " + s.title) + "</strong></td></tr>";
+      full += "<tr><td colspan='4'><strong>" + esc(s.id + ". " + s.title) + "</strong></td></tr>";
       s.items.forEach(function (it) {
-        var st = STATE.items[it.id].status || "—";
+        var r = STATE.items[it.id] || {};
         full += "<tr><td>" + it.id + "</td><td>" + esc(it.text) + "</td><td>" +
-          esc(st.toUpperCase()) + "</td></tr>";
+          esc((r.status || "—").toUpperCase()) + "</td><td>" + esc(r.notes || "") + "</td></tr>";
       });
     });
+    var fHas = CL.fieldItems.some(function (n) {
+      var r = STATE.items[n]; return r && (r.text || r.status || r.notes);
+    });
+    if (fHas) {
+      full += "<tr><td colspan='4'><strong>I. Additional Safety Violations " +
+        "(field-identified)</strong></td></tr>";
+      CL.fieldItems.forEach(function (n) {
+        var r = STATE.items[n] || {};
+        if (!(r.text || r.status || r.notes)) return;
+        full += "<tr><td>" + n + "</td><td>" + esc(r.text || "") + "</td><td>" +
+          esc((r.status || "—").toUpperCase()) + "</td><td>" + esc(r.notes || "") + "</td></tr>";
+      });
+    }
     full += "</table>";
 
     var sigs = "<div class='pgbreak'></div><h2>Acknowledgment & Trade Sign-off Addendum</h2>" +
@@ -421,25 +440,185 @@
       sigBlock("Licensed Contractor (GC) — Lic# " + esc(STATE.sign.contractorLic), STATE.sign.contractorName) +
       sigBlock("Mechanical Contractor (when applicable) — Lic# ______", "") +
       sigBlock("Electrical Contractor — Lic# ______", "") +
-      sigBlock("Plumbing Contractor — Lic# ______", "") +
-      sigBlock("County Building Inspector — Lic# ______", "");
+      sigBlock("Plumbing Contractor — Lic# ______", "");
 
-    // resolve photos async, then render
+    // Photo/video documentation — EVERY item that has media, regardless of
+    // status (not just findings), so compliance photos are never dropped.
+    function itemMeta(id) {
+      var fi = findItem(parseInt(id, 10)), r = STATE.items[id] || {};
+      return {
+        txt: fi ? fi.it.text : (r.text || "Field-identified item " + id),
+        st: (r.status || "—").toUpperCase()
+      };
+    }
+    var ordered = [];
+    CL.sections.forEach(function (s) {
+      s.items.forEach(function (it) { ordered.push(it.id); });
+    });
+    CL.fieldItems.forEach(function (n) { ordered.push(n); });
+    var withMedia = ordered.filter(function (id) {
+      var r = STATE.items[id]; return r && r.media && r.media.length;
+    }).map(function (id) {
+      return { id: id, media: STATE.items[id].media, _ph: "" };
+    });
+
     var photoPromises = [];
-    findings.forEach(function (f) {
-      f.media.forEach(function (mid) { photoPromises.push(imgTag(mid).then(function (h){ f._ph = (f._ph||"")+h; })); });
+    withMedia.forEach(function (pi) {
+      pi.media.forEach(function (mid) {
+        photoPromises.push(imgTag(mid).then(function (h) { pi._ph += h; }));
+      });
     });
     Promise.all(photoPromises).then(function () {
-      var photos = "<div class='pgbreak'></div><h2>Photo Documentation</h2>";
-      findings.forEach(function (f) {
-        if (f._ph) photos += "<p><strong>#" + esc(f.id) + " — " + esc(f.text) +
-          "</strong></p><div class='rpt-photos'>" + f._ph + "</div>";
+      var shown = 0;
+      var photos = "<div class='pgbreak'></div><h2>Photo &amp; Video Documentation</h2>";
+      withMedia.forEach(function (pi) {
+        if (!pi._ph) return;
+        shown++;
+        var m = itemMeta(pi.id);
+        photos += "<p><strong>#" + esc(pi.id) + " — " + esc(m.txt) +
+          "</strong> <em>(" + esc(m.st) + ")</em></p><div class='rpt-photos'>" +
+          pi._ph + "</div>";
       });
+      if (!shown) photos += "<p>No photos or videos attached.</p>";
       root.innerHTML = head + memo + full + sigs + photos;
       if (preview) { root.classList.add("preview");
         root.scrollIntoView(); document.getElementById("app").style.display = "none";
         addPreviewBar();
       } else { window.print(); }
+    });
+  }
+  /* Supplemental: a "Response Key" (every item # + status + notes) followed by
+   * the official blank County PLG-264, merged into one downloadable PDF.
+   * Robust by design — no checkbox coordinate stamping, so it survives county
+   * form revisions. */
+  function statusRGB(P, st) {
+    if (st === "violation") return P.rgb(0.70, 0.15, 0.12);
+    if (st === "unconfirmed") return P.rgb(0.60, 0.42, 0.00);
+    if (st === "compliant") return P.rgb(0.11, 0.50, 0.30);
+    return P.rgb(0.42, 0.42, 0.42);
+  }
+  function buildCountyPDF() {
+    if (!window.PDFLib) {
+      alert("PDF engine not loaded yet. Reopen the app once while online, then retry.");
+      return;
+    }
+    var P = window.PDFLib, btn = document.getElementById("btnCounty");
+    var label = btn.textContent; btn.textContent = "Building…"; btn.disabled = true;
+
+    P.PDFDocument.create().then(function (out) {
+      return Promise.all([
+        out, out.embedFont(P.StandardFonts.Helvetica),
+        out.embedFont(P.StandardFonts.HelveticaBold)
+      ]);
+    }).then(function (a) {
+      var out = a[0], font = a[1], bold = a[2];
+      var PW = 612, PH = 792, M = 46, page, y;
+      function np() { page = out.addPage([PW, PH]); y = PH - M; }
+      function txt(s, o) {
+        o = o || {};
+        var size = o.size || 9, f = o.bold ? bold : font;
+        var color = o.color || P.rgb(0, 0, 0), indent = o.indent || 0;
+        var maxW = PW - 2 * M - indent, words = String(s).split(/\s+/), ln = "";
+        function flush() {
+          if (y < M + size) np();
+          page.drawText(ln, { x: M + indent, y: y, size: size, font: f, color: color });
+          y -= size + 3; ln = "";
+        }
+        for (var i = 0; i < words.length; i++) {
+          var t = ln ? ln + " " + words[i] : words[i];
+          if (f.widthOfTextAtSize(t, size) > maxW && ln) { flush(); ln = words[i]; }
+          else ln = t;
+        }
+        if (ln) flush();
+      }
+      function gap(h) { y -= (h || 6); if (y < M) np(); }
+      function row(id, st) {
+        if (y < M + 26) np();
+        page.drawText(id, { x: M, y: y, size: 9, font: bold });
+        page.drawText((st || "—").toUpperCase(),
+          { x: M + 36, y: y, size: 9, font: bold, color: statusRGB(P, st) });
+        y -= 12;
+      }
+      np();
+      var p = STATE.project;
+      txt("AB 2533 — PLG-264 Inspection Response Key", { size: 15, bold: true });
+      gap(3);
+      txt("Santa Cruz County · Form PLG-264 (Rev " + CL.rev + ") · HSC § 17920.3",
+        { size: 9, color: P.rgb(.3, .3, .3) });
+      txt("APN: " + (p.apn || "—") + "   |   Date: " + (p.date || "—"), { size: 9 });
+      txt("Address: " + (p.address || "—"), { size: 9 });
+      txt("Owner: " + (p.owner || "—"), { size: 9 });
+      gap(5);
+      txt("This key records the inspection result for every PLG-264 line item. " +
+        "The official blank County PLG-264 form is appended after it for reference. " +
+        "Detailed corrective recommendations are in the accompanying Inspection Report.",
+        { size: 8.5, color: P.rgb(.25, .25, .25) });
+      gap(3);
+      txt("Legend:  COMPLIANT / VIOLATION / UNCONFIRMED (concealed) / — not assessed",
+        { size: 8.5, bold: true });
+      gap(8);
+      CL.sections.forEach(function (s) {
+        if (y < M + 44) np();
+        txt(s.id + ". " + s.title, { size: 11, bold: true });
+        s.items.forEach(function (it) {
+          var r = STATE.items[it.id] || {};
+          row("#" + it.id, r.status);
+          txt(it.text, { size: 8, indent: 16, color: P.rgb(.15, .15, .15) });
+          if (r.notes) txt("Field notes: " + r.notes,
+            { size: 8, indent: 16, color: P.rgb(.32, .32, .32) });
+          if (r.media && r.media.length) txt(r.media.length +
+            " photo/video attached (see Inspection Report).",
+            { size: 7.5, indent: 16, color: P.rgb(.45, .45, .45) });
+          gap(3);
+        });
+        gap(5);
+      });
+      var fHas = CL.fieldItems.some(function (n) {
+        var r = STATE.items[n]; return r && (r.text || r.status || r.notes);
+      });
+      if (fHas) {
+        if (y < M + 44) np();
+        txt("I. Additional Safety Violations (field-identified)", { size: 11, bold: true });
+        CL.fieldItems.forEach(function (n) {
+          var r = STATE.items[n] || {};
+          if (!(r.text || r.status || r.notes)) return;
+          row("#" + n, r.status);
+          if (r.text) txt(r.text, { size: 8, indent: 16, color: P.rgb(.15, .15, .15) });
+          if (r.notes) txt("Field notes: " + r.notes,
+            { size: 8, indent: 16, color: P.rgb(.32, .32, .32) });
+          gap(3);
+        });
+      }
+      return fetch("data/PLG-264.pdf").then(function (resp) {
+        if (!resp.ok) throw new Error("form fetch " + resp.status);
+        return resp.arrayBuffer();
+      }).then(function (buf) {
+        return P.PDFDocument.load(buf);
+      }).then(function (off) {
+        return out.copyPages(off, off.getPageIndices());
+      }).then(function (cps) {
+        np();
+        txt("— Official County Form (blank) PLG-264 follows for reference —",
+          { size: 10, bold: true, color: P.rgb(.3, .3, .3) });
+        cps.forEach(function (pg) { out.addPage(pg); });
+        return out.save();
+      }).catch(function () {
+        // Embedding failed (offline before cache, or load error): still deliver the key.
+        txt("[ Official PLG-264 PDF could not be embedded — attach the county " +
+          "form manually. ]", { size: 9, color: P.rgb(.6, 0, 0) });
+        return out.save();
+      });
+    }).then(function (bytes) {
+      var blob = new Blob([bytes], { type: "application/pdf" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "PLG-264_ResponseKey_" + (STATE.project.apn || "inspection") +
+        "_" + STATE.project.date + ".pdf";
+      a.click();
+    }).catch(function (e) {
+      alert("Could not build the county PDF: " + (e && e.message || e));
+    }).then(function () {
+      btn.textContent = label; btn.disabled = false;
     });
   }
   function sigBlock(role, name) {
@@ -513,6 +692,7 @@
   /* ---------- Boot ---------- */
   function wire() {
     document.getElementById("btnReport").addEventListener("click", function () { buildReport(true); });
+    document.getElementById("btnCounty").addEventListener("click", buildCountyPDF);
     document.getElementById("btnExport").addEventListener("click", exportJSON);
     document.getElementById("importFile").addEventListener("change", function (e) {
       if (e.target.files[0]) importJSON(e.target.files[0]);
