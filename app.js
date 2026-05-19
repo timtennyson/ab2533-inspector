@@ -487,146 +487,82 @@
       } else { window.print(); }
     });
   }
-  /* Supplemental: a "Response Key" (every item # + status + notes) followed by
-   * the official blank County PLG-264, merged into one downloadable PDF.
-   * Robust by design — no checkbox coordinate stamping, so it survives county
-   * form revisions. */
-  function statusRGB(P, st) {
-    if (st === "violation") return P.rgb(0.70, 0.15, 0.12);
-    if (st === "unconfirmed") return P.rgb(0.60, 0.42, 0.00);
-    if (st === "compliant") return P.rgb(0.11, 0.50, 0.30);
-    return P.rgb(0.42, 0.42, 0.42);
-  }
+  /* Fill the official County PLG-264 AcroForm directly: mark the
+   * Compliant/Violation/Unconfirmed checkbox per item, fill project +
+   * signature text fields, flatten, and output ONLY the official 5 pages.
+   * Field map derived from the PDF geometry (data/plg264-fields.js) -
+   * re-run the extraction script if the county revises the form. */
   function buildCountyPDF() {
     if (!window.PDFLib) {
       alert("PDF engine not loaded yet. Reopen the app once while online, then retry.");
       return;
     }
-    var P = window.PDFLib, btn = document.getElementById("btnCounty");
-    var label = btn.textContent; btn.textContent = "Building…"; btn.disabled = true;
-
-    P.PDFDocument.create().then(function (out) {
-      return Promise.all([
-        out, out.embedFont(P.StandardFonts.Helvetica),
-        out.embedFont(P.StandardFonts.HelveticaBold)
-      ]);
-    }).then(function (a) {
-      var out = a[0], font = a[1], bold = a[2];
-      var PW = 612, PH = 792, M = 46, page, y;
-      function np() { page = out.addPage([PW, PH]); y = PH - M; }
-      // Standard Helvetica is WinAnsi-only; fold typographic/math symbols to
-      // ASCII so chars like ≥ (U+2265) don't throw, then catch any remaining
-      // non-Latin-1 codepoint.
-      function asc(s) {
-        return String(s)
-          .replace(/[‘’‚‛]/g, "'")
-          .replace(/[“”„]/g, '"')
-          .replace(/[–—―]/g, "-")
-          .replace(/…/g, "...").replace(/•/g, "-")
-          .replace(/ /g, " ").replace(/→/g, "->")
-          .replace(/≥/g, ">=").replace(/≤/g, "<=")
-          .replace(/≠/g, "!=").replace(/×/g, "x")
-          .replace(/[^\x00-\xFF]/g, "-");
+    if (!window.AB2533_PLG264_FIELDS) {
+      alert("PLG-264 field map not loaded. Reopen the app once while online, then retry.");
+      return;
+    }
+    var P = window.PDFLib, FM = window.AB2533_PLG264_FIELDS;
+    var btn = document.getElementById("btnCounty"), label = btn.textContent;
+    btn.textContent = "Building..."; btn.disabled = true;
+    // AcroForm text uses a WinAnsi font; fold non-Latin-1 chars to ASCII.
+    function asc(s) {
+      return String(s == null ? "" : s)
+        .replace(/[‘’‚‛]/g, "'")
+        .replace(/[“”„]/g, '"')
+        .replace(/[–—―]/g, "-")
+        .replace(/…/g, "...").replace(/•/g, "-")
+        .replace(/ /g, " ").replace(/→/g, "->")
+        .replace(/≥/g, ">=").replace(/≤/g, "<=")
+        .replace(/≠/g, "!=").replace(/×/g, "x")
+        .replace(/[^\x00-\xFF]/g, "-");
+    }
+    fetch("data/PLG-264.pdf").then(function (r) {
+      if (!r.ok) throw new Error("form fetch " + r.status);
+      return r.arrayBuffer();
+    }).then(function (buf) {
+      return P.PDFDocument.load(buf);
+    }).then(function (doc) {
+      var form = doc.getForm();
+      function setText(name, val) {
+        if (!name) return;
+        try { form.getTextField(name).setText(asc(val)); } catch (e) {}
       }
-      function txt(s, o) {
-        o = o || {};
-        var size = o.size || 9, f = o.bold ? bold : font;
-        var color = o.color || P.rgb(0, 0, 0), indent = o.indent || 0;
-        var maxW = PW - 2 * M - indent, words = asc(s).split(/\s+/), ln = "";
-        function flush() {
-          if (y < M + size) np();
-          page.drawText(ln, { x: M + indent, y: y, size: size, font: f, color: color });
-          y -= size + 3; ln = "";
-        }
-        for (var i = 0; i < words.length; i++) {
-          var t = ln ? ln + " " + words[i] : words[i];
-          if (f.widthOfTextAtSize(t, size) > maxW && ln) { flush(); ln = words[i]; }
-          else ln = t;
-        }
-        if (ln) flush();
+      function check(name) {
+        if (!name) return;
+        try { form.getCheckBox(name).check(); } catch (e) {}
       }
-      function gap(h) { y -= (h || 6); if (y < M) np(); }
-      function row(id, st) {
-        if (y < M + 26) np();
-        page.drawText(asc(id), { x: M, y: y, size: 9, font: bold });
-        page.drawText(asc((st || "—").toUpperCase()),
-          { x: M + 36, y: y, size: 9, font: bold, color: statusRGB(P, st) });
-        y -= 12;
-      }
-      np();
-      var p = STATE.project;
-      txt("AB 2533 — PLG-264 Inspection Response Key", { size: 15, bold: true });
-      gap(3);
-      txt("Santa Cruz County · Form PLG-264 (Rev " + CL.rev + ") · HSC § 17920.3",
-        { size: 9, color: P.rgb(.3, .3, .3) });
-      txt("APN: " + (p.apn || "—") + "   |   Date: " + (p.date || "—"), { size: 9 });
-      txt("Address: " + (p.address || "—"), { size: 9 });
-      txt("Owner: " + (p.owner || "—"), { size: 9 });
-      gap(5);
-      txt("This key records the inspection result for every PLG-264 line item. " +
-        "The official blank County PLG-264 form is appended after it for reference. " +
-        "Detailed corrective recommendations are in the accompanying Inspection Report.",
-        { size: 8.5, color: P.rgb(.25, .25, .25) });
-      gap(3);
-      txt("Legend:  COMPLIANT / VIOLATION / UNCONFIRMED (concealed) / — not assessed",
-        { size: 8.5, bold: true });
-      gap(8);
-      CL.sections.forEach(function (s) {
-        if (y < M + 44) np();
-        txt(s.id + ". " + s.title, { size: 11, bold: true });
-        s.items.forEach(function (it) {
-          var r = STATE.items[it.id] || {};
-          row("#" + it.id, r.status);
-          txt(it.text, { size: 8, indent: 16, color: P.rgb(.15, .15, .15) });
-          if (r.notes) txt("Field notes: " + r.notes,
-            { size: 8, indent: 16, color: P.rgb(.32, .32, .32) });
-          if (r.media && r.media.length) txt(r.media.length +
-            " photo/video attached (see Inspection Report).",
-            { size: 7.5, indent: 16, color: P.rgb(.45, .45, .45) });
-          gap(3);
-        });
-        gap(5);
+      var p = STATE.project, sg = STATE.sign || {}, T = FM.text;
+      setText(T.apn, p.apn);
+      setText(T.date, p.date);
+      setText(T.address, p.address);
+      setText(T.ownerAddress, p.ownerAddress);
+      setText(T.ownerName, p.owner || sg.ownerName);
+      setText(T.ownerEmail, p.ownerEmail || sg.ownerEmail);
+      setText(T.ownerPhone, p.ownerPhone || sg.ownerPhone);
+      setText(T.ownerSig, sg.ownerName || p.owner);
+      setText(T.ownerDate, p.date);
+      setText(T.coName, sg.contractorName);
+      setText(T.coPhone, sg.contractorPhone);
+      setText(T.coEmail, sg.contractorEmail);
+      setText(T.coSig, sg.contractorName);
+      setText(T.coLic, sg.contractorLic);
+      setText(T.coDate, p.date);
+      setText(T.fi44, (STATE.items[44] || {}).text);
+      setText(T.fi45, (STATE.items[45] || {}).text);
+      setText(T.fi46, (STATE.items[46] || {}).text);
+      Object.keys(FM.checks).forEach(function (id) {
+        var st = (STATE.items[id] || {}).status;
+        if (!st) return;
+        var col = FM.checks[id][st];
+        if (col) check(col);
       });
-      var fHas = CL.fieldItems.some(function (n) {
-        var r = STATE.items[n]; return r && (r.text || r.status || r.notes);
-      });
-      if (fHas) {
-        if (y < M + 44) np();
-        txt("I. Additional Safety Violations (field-identified)", { size: 11, bold: true });
-        CL.fieldItems.forEach(function (n) {
-          var r = STATE.items[n] || {};
-          if (!(r.text || r.status || r.notes)) return;
-          row("#" + n, r.status);
-          if (r.text) txt(r.text, { size: 8, indent: 16, color: P.rgb(.15, .15, .15) });
-          if (r.notes) txt("Field notes: " + r.notes,
-            { size: 8, indent: 16, color: P.rgb(.32, .32, .32) });
-          gap(3);
-        });
-      }
-      return fetch("data/PLG-264.pdf").then(function (resp) {
-        if (!resp.ok) throw new Error("form fetch " + resp.status);
-        return resp.arrayBuffer();
-      }).then(function (buf) {
-        return P.PDFDocument.load(buf);
-      }).then(function (off) {
-        return out.copyPages(off, off.getPageIndices());
-      }).then(function (cps) {
-        np();
-        txt("— Official County Form (blank) PLG-264 follows for reference —",
-          { size: 10, bold: true, color: P.rgb(.3, .3, .3) });
-        cps.forEach(function (pg) { out.addPage(pg); });
-        return out.save();
-      }).catch(function () {
-        // Embedding failed (offline before cache, or load error): still deliver the key.
-        txt("[ Official PLG-264 PDF could not be embedded — attach the county " +
-          "form manually. ]", { size: 9, color: P.rgb(.6, 0, 0) });
-        return out.save();
-      });
+      try { form.flatten(); } catch (e) {}
+      return doc.save();
     }).then(function (bytes) {
       var blob = new Blob([bytes], { type: "application/pdf" });
       var a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = "PLG-264_ResponseKey_" + (STATE.project.apn || "inspection") +
+      a.download = "PLG-264_filled_" + (STATE.project.apn || "inspection") +
         "_" + STATE.project.date + ".pdf";
       a.click();
     }).catch(function (e) {

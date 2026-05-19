@@ -6,10 +6,10 @@
  * This ends the "bump version + manual reopen dance" — online users always
  * get the latest, offline users still work.
  */
-var CACHE = "ab2533-v5";
+var CACHE = "ab2533-v6";
 var PRECACHE = [
   "./", "./index.html", "./styles.css", "./app.js",
-  "./data/checklist.js", "./manifest.webmanifest",
+  "./data/checklist.js", "./data/plg264-fields.js", "./manifest.webmanifest",
   "./vendor/pdf-lib.min.js", "./data/PLG-264.pdf"
 ];
 
